@@ -17,6 +17,9 @@ contract KYCStorage {
     event KYCAdded(bytes32 indexed userId, address indexed wallet, uint256 validUntil);
     event WalletLinked(bytes32 indexed userId, address indexed wallet);
     event KYCUpdated(bytes32 indexed userId, uint256 newExpiry);
+    event KYCDeleted(bytes32 indexed userId);
+    event WalletRemoved(bytes32 indexed userId, address indexed wallet);
+    event WalletReplaced(bytes32 indexed userId, address indexed wallet, address indexed newWallet);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not authorized");
@@ -58,6 +61,58 @@ contract KYCStorage {
 
         emit WalletLinked(userId, newWallet);
     }
+
+    function removeKYC(bytes32 userId) external onlyOwner {
+    require(kycRecords[userId].exists, "User does not exist");
+
+    // Unlink all wallets
+    address[] memory wallets = userWallets[userId];
+    for (uint256 i = 0; i < wallets.length; i++) {
+        delete walletToUserId[wallets[i]];
+    }
+
+    delete userWallets[userId];
+    delete kycRecords[userId];
+
+    emit KYCDeleted(userId);
+}
+
+function removeLinkedWalletAddress(bytes32 userId, address wallet) external onlyOwner {
+    require(kycRecords[userId].exists, "User does not exist");
+    require(walletToUserId[wallet] == userId, "Wallet not linked to user");
+
+    address[] storage wallets = userWallets[userId];
+    require(wallets.length > 1, "Cannot remove last wallet");
+
+    // Remove wallet from userWallets
+    for (uint256 i = 0; i < wallets.length; i++) {
+        if (wallets[i] == wallet) {
+            wallets[i] = wallets[wallets.length - 1];
+            wallets.pop();
+            break;
+        }
+    }
+    delete walletToUserId[wallet];
+    emit WalletRemoved(userId, wallet);
+}
+
+function replaceWallet(bytes32 userId, address oldWallet, address newWallet) external onlyOwner {
+    require(kycRecords[userId].exists, "User does not exist");
+    require(walletToUserId[oldWallet] == userId, "Old wallet not linked");
+    require(walletToUserId[newWallet] == bytes32(0), "New wallet already linked");
+
+    address[] storage wallets = userWallets[userId];
+    for (uint256 i = 0; i < wallets.length; i++) {
+        if (wallets[i] == oldWallet) {
+            wallets[i] = newWallet;
+            break;
+        }
+    }
+
+    delete walletToUserId[oldWallet];
+    walletToUserId[newWallet] = userId;
+    emit WalletReplaced(userId, oldWallet, newWallet);
+}
 
     function updateKYC(
         bytes32 userId,
